@@ -1,9 +1,9 @@
 # Copyright (C) 2007 Richard Spindler <richard.spindler AT gmail.com>
-#  
+#
 # This file is free software; as a special exception the author gives
-# unlimited permission to copy and/or distribute it, with or without 
+# unlimited permission to copy and/or distribute it, with or without
 # modifications, as long as this notice is preserved.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
@@ -33,6 +33,7 @@ plugin_LTLIBRARIES = \
 	bw0r.la \
 	c0rners.la \
 	cartoon.la \
+  cellshade.la \
 	cluster.la \
 	colgate.la \
 	coloradj_RGB.la \
@@ -209,6 +210,7 @@ brightness_la_SOURCES = filter/brightness/brightness.c
 bw0r_la_SOURCES = filter/bw0r/bw0r.c
 c0rners_la_SOURCES = filter/c0rners/c0rners.c filter/c0rners/interp.h
 cartoon_la_SOURCES = filter/cartoon/cartoon.cpp
+cellshade_la_SOURCES = filter/cellshade/cellshade.cpp
 cluster_la_SOURCES = filter/cluster/cluster.c
 colgate_la_SOURCES = filter/colgate/colgate.c
 coloradj_RGB_la_SOURCES = filter/coloradj/coloradj_RGB.c
