@@ -1,3 +1,15 @@
+# Frei0r 1.3 with an IRIS Connect cellshade
+
+Alfredo Di Napoli's 'cellshade' variant of the standard
+'cartoon' filter has been added to Frei0r 1.3 on this
+branch.
+
+Distributed/deployed through a snapshot tarball
+by the [ic-ffmpeg-codecs32](https://github.com/iconnect/poseidon/blob/master/doc/ic-ffmpeg-codecs32.md)
+Poseidon RPM package. See also [dockerfiles/ffmpeg](https://github.com/iconnect/dockerfiles/tree/master/ffmpeg)
+for a docker-ised package.
+
+
 
    ___________              ._________
    \_   _____/______   ____ |__\   _  \_______
@@ -13,29 +25,29 @@ http://frei0r.dyne.org	      	    by the Piksel Developers Union
 
 Table of Contents
 =================
-Introduction 
-    What Frei0r is 
-    What Frei0r is not 
-    Current status 
-    Code gallery 
-    History 
-Download 
-    Source code 
-        Build dependencies 
-    Debian / Ubuntu 
-    Apple / OSX 
-Documentation 
-    API explanation 
-    C++ Filter example 
-Communication 
-Acknowledgments 
+Introduction
+    What Frei0r is
+    What Frei0r is not
+    Current status
+    Code gallery
+    History
+Download
+    Source code
+        Build dependencies
+    Debian / Ubuntu
+    Apple / OSX
+Documentation
+    API explanation
+    C++ Filter example
+Communication
+Acknowledgments
 
 
-Introduction 
+Introduction
 ~~~~~~~~~~~~~
 
 
-What Frei0r is 
+What Frei0r is
 ===============
 
 Frei0r is a minimalistic plugin API for video effects.
@@ -48,7 +60,7 @@ It's our hope that this way these simple effects can be shared between
 many  applications,  avoiding   their  reimplementation  by  different
 projects.
 
-What Frei0r is not 
+What Frei0r is not
 ===================
 
 Frei0r is not meant as a competing standard to more ambitious efforts
@@ -63,7 +75,7 @@ Eventually the frei0r API can be wrapped by higher level APIs
 expanding its functionalities (for instance as GStreamer, MLT, FFmpeg
 and others do).
 
-Current status 
+Current status
 ===============
 
 
@@ -76,15 +88,15 @@ and  patches  are  well  accepted,   get  in  touch  with  us  on  the
 mailinglist.
 
 
-Code gallery 
+Code gallery
 =============
- 
+
 You might want to look at the code in frei0r more in detail, then
 browse the existing effects by visiting the Frei0r plugin gallery
 online.
 
 
-History 
+History
 ========
 
 Frei0r has been around since 2004, born from yearly brainstormings
@@ -112,10 +124,10 @@ Wikipedia page about Frei0r: http://en.wikipedia.org/wiki/Frei0r
 [KDEnLive]: http://www.kdenlive.org/
 
 
-Download 
+Download
 ~~~~~~~~~
 
-Source code 
+Source code
 ============
 
 Stable frei0r releases are packaged periodically and distributed on
@@ -141,7 +153,7 @@ we coalesce around this repository online to pack releases. Make sure
 to get in touch with our mailinglist if you like to see your code in
 there.
 
-Build dependencies 
+Build dependencies
 -------------------
 
  + GNU autotools ( ./configure && make )
@@ -151,15 +163,15 @@ Build dependencies
 Frei0r can be built on GNU/Linux, M$/Windows and Apple/OSX platforms,
 possibly in even more environments like embedded devices/
 
-* Optional Dependencies 
-  
+* Optional Dependencies
+
   + [Gavl] ( required for scale0tilt and vectorscope filters )
     [Gavl]: http://gmerlin.sourceforge.net
 
   + [OpenCV] (required for facebl0r filter )
     [OpenCV]: http://opencvlibrary.sourceforge.net
 
-Debian / Ubuntu 
+Debian / Ubuntu
 ================
 
 Binary packages  are mantained  for Debian ([QA])  and Ubuntu  ([pkg]), to
@@ -171,7 +183,7 @@ install the stable version distributed use *apt-get* or *synaptic*:
  [QA]: http://packages.qa.debian.org/f/frei0r.html
  [pkg]: http://packages.ubuntu.com/search?searchon=names&keywords=frei0r
 
-Apple / OSX 
+Apple / OSX
 ============
 
 [MacPorts] provide ready  to install packages for OSX:  in case you have
@@ -183,14 +195,14 @@ sudo port install frei0r-plugins
 [MacPorts]: http://www.macports.org
 
 
-Documentation 
+Documentation
 ~~~~~~~~~~~~~~
 If you  are new to frei0r (but  not to programming) the  best thing is
 probably to  have a look at  the [frei0r header], which  is quite simple
 and well documented, or the doxygen code documentation in doc/
 
 
-API explanation 
+API explanation
 ================
 
 While  the main  source of  documentation for  the Frei0r  API  is the
@@ -200,20 +212,20 @@ header, the  sourcecode is  well commented so  you can study  its full
 [doxyfied documentation]: http://frei0r.dyne.org/codedoc/html
 
 
-C++ Filter example 
+C++ Filter example
 ===================
 
 A simple skeleton for a frei0r video filter looks like this:
 
 
   #include <frei0r.hpp>
-  
+
   typedef struct {
     int16_t w, h;
     uint8_t bpp;
     uint32_t size;
   } ScreenGeometry;
-  
+
   class MyExample: public frei0r::filter {
   public:
     MyExample(int wdt, int hgt);
@@ -223,33 +235,33 @@ A simple skeleton for a frei0r video filter looks like this:
     ScreenGeometry geo;
     void _init(int wdt, int hgt);
   }
-  
+
   MyExample::MyExample() { /* constructor */ }
   MyExample::~MyExample() { /* destructor */ }
-  
+
   void MyExample::_init(int wdt, int hgt) {
     geo.w = wdt;
     geo.h = hgt;
     geo.bpp = 32; // this filter works only in RGBA 32bit
     geo.size = geo.w*geo.h*(geo.bpp/8); // calculate the size in bytes
   }
-  
+
   void MyExample::update() {
-    // we get video input via buffer pointer (void*)in 
+    // we get video input via buffer pointer (void*)in
     uint32_t *src = (uint32_t*)in;
     // and we give video output via buffer pointer (void*)out
     uint32_t *dst = (uint32_t*)out;
     // this example here does just a copy of input to output
     memcpy(dst, src, geo.size);
   }
-    
+
   frei0r::construct<MyExample>
           plugin("MyExample", "short and simple description for my example",
                  "Who did it", 1, 0);
 
 
 
-Communication 
+Communication
 ~~~~~~~~~~~~~~
 
 You  can get  in touch  with our  developer community,  send  your new
@@ -268,7 +280,7 @@ implementations  and platform  builds,  here is  a publicly  available
 [searchable and indexed]: http://blog.gmane.org/gmane.comp.video.frei0r.devel
 [issue tracker]: http://www.piksel.no/projects/frei0r/report
 
-Acknowledgments 
+Acknowledgments
 ~~~~~~~~~~~~~~~~
 
 
@@ -299,5 +311,3 @@ standardization were taken care of by dyne.org developers Filippo
 Giunchedi and Luca Bigliardi.
 
 ---------------------------------------------------------------------
-
-
