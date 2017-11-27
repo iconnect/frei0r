@@ -1,9 +1,9 @@
 # Copyright (C) 2007 Richard Spindler <richard.spindler AT gmail.com>
-#  
+#
 # This file is free software; as a special exception the author gives
-# unlimited permission to copy and/or distribute it, with or without 
+# unlimited permission to copy and/or distribute it, with or without
 # modifications, as long as this notice is preserved.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
@@ -31,6 +31,7 @@ plugin_LTLIBRARIES = \
 	bw0r.la \
 	c0rners.la \
 	cartoon.la \
+  cellshade.la \
 	cluster.la \
 	coloradj_RGB.la \
 	colordistance.la \
@@ -133,7 +134,7 @@ endif
 if HAVE_OPENCV
 plugin_LTLIBRARIES += facebl0r.la
 facebl0r_la_SOURCES = filter/facebl0r/facebl0r.cpp
-facebl0r_la_CFLAGS = @OPENCV_CFLAGS@ @CFLAGS@ 
+facebl0r_la_CFLAGS = @OPENCV_CFLAGS@ @CFLAGS@
 facebl0r_la_LIBADD = @OPENCV_LIBS@
 plugin_LTLIBRARIES += facedetect.la
 facedetect_la_SOURCES = filter/facedetect/facedetect.cpp
@@ -156,6 +157,7 @@ brightness_la_SOURCES = filter/brightness/brightness.c
 bw0r_la_SOURCES = filter/bw0r/bw0r.c
 c0rners_la_SOURCES = filter/c0rners/c0rners.c filter/c0rners/interp.h
 cartoon_la_SOURCES = filter/cartoon/cartoon.cpp
+cellshade_la_SOURCES = filter/cellshade/cellshade.cpp
 cluster_la_SOURCES = filter/cluster/cluster.c
 coloradj_RGB_la_SOURCES = filter/coloradj/coloradj_RGB.c
 colordistance_la_SOURCES = filter/colordistance/colordistance.c
@@ -257,8 +259,8 @@ value_la_SOURCES = mixer2/value/value.cpp
 xfade0r_la_SOURCES = mixer2/xfade0r/xfade0r.cpp
 
 
-AM_CPPFLAGS = -I@top_srcdir@/include 
-AM_CFLAGS = -I@top_srcdir@/include 
+AM_CPPFLAGS = -I@top_srcdir@/include
+AM_CFLAGS = -I@top_srcdir@/include
 AM_LDFLAGS = -module -avoid-version -lm -export-dynamic
 AM_LIBTOOLFLAGS = --tag=disable-static
 
