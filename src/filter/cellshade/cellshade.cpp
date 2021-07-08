@@ -94,7 +94,9 @@ public:
     delete geo;
   }
 
-  virtual void update() {
+  virtual void update(double time,
+                      uint32_t* out,
+                      const uint32_t* in) {
     // Cartoonify picture, do a form of edge detect 
     int x, y, t;
 
