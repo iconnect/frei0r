@@ -33,7 +33,7 @@ plugin_LTLIBRARIES = \
 	bw0r.la \
 	c0rners.la \
 	cartoon.la \
-  cellshade.la \
+	cellshade.la \
 	cluster.la \
 	colgate.la \
 	coloradj_RGB.la \
@@ -47,6 +47,7 @@ plugin_LTLIBRARIES = \
 	curves.la \
 	d90stairsteppingfix.la \
 	darken.la \
+	deface.la \
 	defish0r.la \
 	delay0r.la \
 	delaygrab.la \
@@ -221,6 +222,7 @@ colortap_la_SOURCES = filter/colortap/colortap.c
 contrast0r_la_SOURCES = filter/contrast0r/contrast0r.c
 curves_la_SOURCES = filter/curves/curves.c
 d90stairsteppingfix_la_SOURCES = filter/d90stairsteppingfix/d90stairsteppingfix.cpp
+deface_la_SOURCES = filter/deface/deface.cpp
 defish0r_la_SOURCES = filter/defish0r/defish0r.c filter/defish0r/interp.h
 delay0r_la_SOURCES = filter/delay0r/delay0r.cpp
 delaygrab_la_SOURCES = filter/delaygrab/delaygrab.cpp
