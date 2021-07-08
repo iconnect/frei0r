@@ -56,9 +56,9 @@ class Deface: public frei0r::filter {
 public:
 
   f0r_param_double threshold;
-  char* moduleName;
-  char* get_anonymized_image;
-  PyObject *pName, *pModule, *pFunc;
+  char *defaceModule, *imageIoModule;
+  char *get_anonymized_image, *imread;
+  PyObject *pDefaceModule, *pImageIoModule, *pGetAnonymizedImage, *pImread;
   PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
@@ -91,23 +91,25 @@ public:
       // initalise more than one interpreter per process.
       if (global_counter == 2) {
           Py_Initialize();
+          gstate = PyGILState_Ensure();
           fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
 
-          moduleName = "deface.deface";
+          defaceModule = "deface.deface";
           get_anonymized_image = "get_anonymized_image";
 
-          gstate = PyGILState_Ensure();
-          pModule = PyImport_ImportModule("deface.deface");
+          pDefaceModule  = PyImport_ImportModule("deface.deface");
+          pImageIoModule = PyImport_ImportModule("imageio");
 
-          if (pModule != NULL) {
-              pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
-              /* pFunc is a new reference */
+          if (pDefaceModule != NULL) {
+              pGetAnonymizedImage = PyObject_GetAttrString(pDefaceModule, get_anonymized_image);
+              /* pGetAnonymizedImage is a new reference */
 
-              if (pFunc && PyCallable_Check(pFunc)) {
+              if (pGetAnonymizedImage && PyCallable_Check(pGetAnonymizedImage)) {
                   fprintf(stdout, "Setting pythonReady to true\n");
                   pythonReady = true;
               }
               else {
+                  pythonReady = false;
                   if (PyErr_Occurred()) {
                       PyErr_Print();
                       fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
@@ -116,7 +118,29 @@ public:
 
           } else {
               PyErr_Print();
-              fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
+              fprintf(stderr, "Failed to load \"%s\"\n", defaceModule);
+          }
+
+          if (pImageIoModule != NULL) {
+
+              imread = "imread";
+
+              pImread = PyObject_GetAttrString(pImageIoModule, imread);
+
+              if (pImread && PyCallable_Check(pImread)) {
+                  pythonReady = pythonReady && true;
+              }
+              else {
+                  pythonReady = false;
+                  if (PyErr_Occurred()) {
+                      PyErr_Print();
+                      fprintf(stderr, "Cannot find function \"%s\"\n", imread);
+                  }
+              }
+
+          } else {
+              PyErr_Print();
+              fprintf(stderr, "Failed to load \"%s\"\n", imageIoModule);
           }
 
       }
@@ -135,8 +159,8 @@ public:
     if (global_counter == 2) {
 
         fprintf(stdout, "Deface destructor called\n");
-        Py_DECREF(pFunc);
-        Py_DECREF(pModule);
+        Py_DECREF(pGetAnonymizedImage);
+        Py_DECREF(pDefaceModule);
         PyGILState_Release(gstate);
         Py_Finalize();
 
@@ -148,9 +172,26 @@ public:
 
     //noop
     int x, y, t;
+    PyObject *pRawFrameBytes;
     PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
     if (pythonReady) {
+
+        // Copy the frame into conBuffer
+        memcpy(&in, &conBuffer, geo->size);
+
+        pRawFrameBytes = PyBytes_FromString((char*)conBuffer);
+
+        pArgs = PyTuple_New(2); // imread has 1 arg
+        PyTuple_SetItem(pArgs, 0, pRawFrameBytes);
+        PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("yuv420p"));
+        pFrame = PyObject_CallObject(pImread, pArgs);
+        Py_DECREF(pArgs);
+
+        if (pFrame == NULL) {
+            PyErr_Print();
+        }
+
         pArgs = PyTuple_New(6); // get_anonymized_image has 6 arguments
 
         // def get_anonymized_image(frame,
@@ -161,7 +202,6 @@ public:
         //                          draw_scores: bool,
         //                          ):
 
-        pFrame       = PyUnicode_DecodeFSDefault("lol");
         pReplaceWith = PyUnicode_DecodeFSDefault("blur");
         pThreshold   = PyFloat_FromDouble((double)threshold);
         pMaskScale   = PyFloat_FromDouble(1.3);
@@ -175,7 +215,18 @@ public:
         PyTuple_SetItem(pArgs, 4, pEllipse);
         PyTuple_SetItem(pArgs, 5, pDrawScores);
 
-        pValue = PyObject_CallObject(pFunc, pArgs);
+        pValue = PyObject_CallObject(pGetAnonymizedImage, pArgs);
+
+        Py_DECREF(pArgs);
+        if (pValue != NULL) {
+            printf("Result of call: %ld\n", PyLong_AsLong(pValue));
+            Py_DECREF(pValue);
+        }
+        else {
+            PyErr_Print();
+            fprintf(stderr,"Call failed\n");
+        }
+
 
     } else {
 
