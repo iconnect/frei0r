@@ -25,6 +25,7 @@
 #include <math.h>
 
 #include <frei0r.hpp>
+#include <Python.h>
 
 #define RED(n)  ((n>>16) & 0x000000FF)
 #define GREEN(n) ((n>>8) & 0x000000FF)
@@ -35,6 +36,8 @@
   if((*p = *p<<4)<0)>>n; \
   *(p+1) = (*(p+1)<<4)>>n; \
   *(p+2) = (*(p+2)<<4)>>n; }
+
+#define PY_SSIZE_T_CLEAN
 
 /* setup some data to identify the plugin */
 const uint32_t black = 0xFF000000;
@@ -55,136 +58,31 @@ typedef struct {
 class Deface: public frei0r::filter {
 public:
 
-  f0r_param_double triplevel;
-  f0r_param_double diffspace;
+  f0r_param_double threshold;
+  PyObject *pName, *pModule;
 
   Deface(unsigned int width, unsigned int height) {
-    int c;
-    register_param(triplevel, "triplevel", "level of trip: use high numbers, incremented by 100");
-    register_param(diffspace, "diffspace", "difference space: a value from 0 to 256");
 
-    geo = new ScreenGeometry();
-    geo->w = width;
-    geo->h = height;
-    geo->size =  width*height*sizeof(uint32_t);
+    Py_Initialize();
 
-    if ( geo->size > 0 ) {
-      prePixBuffer = (int32_t*)malloc(geo->size);
-      conBuffer = (int32_t*)malloc(geo->size);
+    register_param(threshold, "threshold", "The threshold as in the deface algorithm");
 
-      yprecal = (int*)malloc(geo->h*2*sizeof(int));
-    }
-    for(c=0;c<geo->h*2;c++)
-      yprecal[c] = geo->w*c;
-    for(c=0;c<256;c++)
-      powprecal[c] = c*c;
+    pName = PyUnicode_DecodeFSDefault("deface");
+    /* Error checking of pName left out */
 
-    triplevel = 1000;
-    diffspace = 1;
+    pModule = PyImport_Import(pName);
+    Py_DECREF(pName);
 
   }
 
   ~Deface() {
-    if ( geo->size > 0 ) {
-      free(prePixBuffer);
-      free(conBuffer);
-      free(yprecal);
-    }
-    delete geo;
+    Py_DECREF(pModule);
+    Py_FinalizeEx();
   }
 
   virtual void update(double time, uint32_t* out, const uint32_t* in) {
-    // Defaceify picture, do a form of edge detect
-    int x, y, t;
-
-
-    for (x=(int)diffspace;x<geo->w-(1+(int)diffspace);x++) {
-
-      for (y=(int)diffspace;y<geo->h-(1+(int)diffspace);y++) {
-
-        t = GetMaxContrast((int32_t*)in,x,y);
-        if (t > triplevel) {
-
-          //  Make a border pixel
-          *(out+x+yprecal[y]) = gray;
-
-        } else {
-
-          //   Copy original color
-          *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
-          FlattenColor((int32_t*)out+x+yprecal[y]);
-
-        }
-      }
-    }
   }
-
-private:
-  ScreenGeometry *geo;
-  /* buffer where to copy the screen
-     a pointer to it is being given back by process() */
-
-  int32_t *prePixBuffer;
-  int32_t *conBuffer;
-  int *yprecal;
-  uint16_t powprecal[256];
-  int32_t black;
-
-  void FlattenColor(int32_t *c);
-  long GetMaxContrast(int32_t *src,int x,int y);
-
-  inline uint16_t gmerror(int32_t a, int32_t b);
 };
-
-/* the following should be faster on older CPUs
-   but runs slower than the GMERROR define on SSE units*/
-inline uint16_t Deface::gmerror(int32_t a, int32_t b) {
-  register int dr, dg, db;
-  if((dr = RED(a) - RED(b)) < 0) dr = -dr;
-  if((dg = GREEN(a) - GREEN(b)) < 0) dg = -dg;
-  if((db = BLUE(a) - BLUE(b)) < 0) db = -db;
-  return(powprecal[dr]+powprecal[dg]+powprecal[db]);
-}
-
-
-void Deface::FlattenColor(int32_t *c) {
-  // (*c) = RGB(40*(RED(*c)/40),40*(GREEN(*c)/40),40*(BLUE(*c)/40)); */
-  uint8_t *p;
-  p = (uint8_t*)c;
-  (*p) = ((*p)>>5)<<5; p++;
-  (*p) = ((*p)>>5)<<5; p++;
-  (*p) = ((*p)>>5)<<5;
-}
-
-
-
-long Deface::GetMaxContrast(int32_t *src,int x,int y) {
-  int32_t c1,c2;
-  long error,max=0;
-
-  /* Assumes PrePixelModify has been run */
-  c1 = *PIXELAT(x-(int)diffspace,y,src);
-  c2 = *PIXELAT(x+(int)diffspace,y,src);
-  error = GMERROR(c1,c2);
-  if (error>max) max = error;
-
-  c1 = *PIXELAT(x,y-(int)diffspace,src);
-  c2 = *PIXELAT(x,y+(int)diffspace,src);
-  error = GMERROR(c1,c2);
-  if (error>max) max = error;
-
-  c1 = *PIXELAT(x-(int)diffspace,y-(int)diffspace,src);
-  c2 = *PIXELAT(x+(int)diffspace,y+(int)diffspace,src);
-  error = GMERROR(c1,c2);
-  if (error>max) max = error;
-
-  c1 = *PIXELAT(x+(int)diffspace,y-(int)diffspace,src);
-  c2 = *PIXELAT(x-(int)diffspace,y+(int)diffspace,src);
-  error = GMERROR(c1,c2);
-  if (error>max) max = error;
-
-  return(max);
-}
 
 frei0r::construct<Deface> plugin("Deface",
                                   "Defaceify video, do a form of edge detect",
