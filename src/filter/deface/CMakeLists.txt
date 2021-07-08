@@ -29,9 +29,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 # Linker directives.
 #
 
-add_library(python3.6m STATIC IMPORTED)
+add_library(python3.6m SHARED IMPORTED)
 set_target_properties(python3.6m PROPERTIES
-  IMPORTED_LOCATION "/Users/adinapoli/.pyenv/versions/3.6-dev/lib/libpython3.6m.a"
+  IMPORTED_LOCATION "/Users/adinapoli/.pyenv/versions/3.6-dev/lib/libpython3.6m.dylib"
   INTERFACE_INCLUDE_DIRECTORIES "/Users/adinapoli/.pyenv/versions/3.6-dev/include/python3.6m"
 )
 #find_library(python3.6m

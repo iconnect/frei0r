@@ -62,55 +62,101 @@ public:
   char* moduleName;
   char* get_anonymized_image;
   PyObject *pName, *pModule, *pFunc;
+  PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
 
-    Py_Initialize();
+      int c;
 
-    register_param(threshold, "threshold", "The threshold as in the deface algorithm");
+      register_param(threshold, "threshold", "The threshold as in the deface algorithm");
 
-    moduleName = "deface.deface";
-    get_anonymized_image = "get_anonymized_image";
+      // Initialise the ScreenGeometry which will help us to locate pixels on screen.
+      geo = new ScreenGeometry();
+      geo->w = width;
+      geo->h = height;
+      geo->size =  width*height*sizeof(uint32_t);
 
-    pName = PyUnicode_DecodeFSDefault(moduleName);
-    /* Error checking of pName left out */
+      if ( geo->size > 0 ) {
+          prePixBuffer = (int32_t*)malloc(geo->size);
+          conBuffer = (int32_t*)malloc(geo->size);
 
-    pModule = PyImport_ImportModule("deface.deface");
-    Py_DECREF(pName);
+          yprecal = (int*)malloc(geo->h*2*sizeof(int));
+      }
+      for(c=0;c<geo->h*2;c++)
+          yprecal[c] = geo->w*c;
+      for(c=0;c<256;c++) 
+          powprecal[c] = c*c;
 
-    if (pModule != NULL) {
+      Py_Initialize();
+      //gstate = PyGILState_Ensure();
 
-        pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
-        /* pFunc is a new reference */
+      moduleName = "deface.deface";
+      get_anonymized_image = "get_anonymized_image";
+      /* Error checking of pName left out */
 
-        if (pFunc && PyCallable_Check(pFunc)) {
-            fprintf(stderr, "OK\n");
-        }
-        else {
-            if (PyErr_Occurred()) {
-                PyErr_Print();
-                fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
-            }
-        }
+      //pModule = PyImport_ImportModule("deface.deface");
 
+      //if (pModule != NULL) {
 
-    Py_XDECREF(pFunc);
-    Py_DECREF(pModule);
+      //    pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
+      //    /* pFunc is a new reference */
 
-  } else {
-      PyErr_Print();
-      fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
-  }
+      //    if (pFunc && PyCallable_Check(pFunc)) {
+      //        fprintf(stderr, "found get_anonymized_image\n");
+      //    }
+      //    else {
+      //        if (PyErr_Occurred()) {
+      //            PyErr_Print();
+      //            fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
+      //        }
+      //    }
+
+      //} else {
+      //    PyErr_Print();
+      //    fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
+      //}
 
   }
 
   ~Deface() {
-    Py_DECREF(pModule);
+    // Dealloc the ScreenGeometry stuff.
+    if ( geo->size > 0 ) {
+      free(prePixBuffer);
+      free(conBuffer);
+      free(yprecal);
+    }
+    delete geo;
+
+    fprintf(stderr, "Shutting down everything\n");
+    //Py_DECREF(pModule);
+    //PyGILState_Release(gstate);
     Py_FinalizeEx();
   }
 
   virtual void update(double time, uint32_t* out, const uint32_t* in) {
+
+    //noop
+    int x, y, t;
+
+    for (x=(int)0;x<geo->w;x++) {
+        for (y=(int)0;y<geo->h;y++) {
+          // Copy original color
+          *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+        }
+    }
+
   }
+
+
+private:
+  ScreenGeometry *geo;
+  /* buffer where to copy the screen
+     a pointer to it is being given back by process() */
+  int32_t *prePixBuffer;
+  int32_t *conBuffer;
+  int *yprecal;
+  uint16_t powprecal[256];
+
 };
 
 frei0r::construct<Deface> plugin("Deface",
