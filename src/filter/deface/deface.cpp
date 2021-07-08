@@ -59,7 +59,9 @@ class Deface: public frei0r::filter {
 public:
 
   f0r_param_double threshold;
-  PyObject *pName, *pModule;
+  char* moduleName;
+  char* get_anonymized_image;
+  PyObject *pName, *pModule, *pFunc;
 
   Deface(unsigned int width, unsigned int height) {
 
@@ -67,11 +69,38 @@ public:
 
     register_param(threshold, "threshold", "The threshold as in the deface algorithm");
 
-    pName = PyUnicode_DecodeFSDefault("deface");
+    moduleName = "deface.deface";
+    get_anonymized_image = "get_anonymized_image";
+
+    pName = PyUnicode_DecodeFSDefault(moduleName);
     /* Error checking of pName left out */
 
-    pModule = PyImport_Import(pName);
+    pModule = PyImport_ImportModule("deface.deface");
     Py_DECREF(pName);
+
+    if (pModule != NULL) {
+
+        pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
+        /* pFunc is a new reference */
+
+        if (pFunc && PyCallable_Check(pFunc)) {
+            fprintf(stderr, "OK\n");
+        }
+        else {
+            if (PyErr_Occurred()) {
+                PyErr_Print();
+                fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
+            }
+        }
+
+
+    Py_XDECREF(pFunc);
+    Py_DECREF(pModule);
+
+  } else {
+      PyErr_Print();
+      fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
+  }
 
   }
 
