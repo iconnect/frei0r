@@ -51,9 +51,6 @@ typedef struct {
 } ScreenGeometry;
 
 #define PIXELAT(x1,y1,s) ((s)+(x1)+ yprecal[y1])// (y1)*(geo->w)))
-#define GMERROR(cc1,cc2) ((((RED(cc1)-RED(cc2))*(RED(cc1)-RED(cc2))) +\
-  ((GREEN(cc1)-GREEN(cc2)) *(GREEN(cc1)-GREEN(cc2))) + \
-                           ((BLUE(cc1)-BLUE(cc2))*(BLUE(cc1)-BLUE(cc2)))))
 
 class Deface: public frei0r::filter {
 public:
@@ -66,9 +63,12 @@ public:
 
   Deface(unsigned int width, unsigned int height) {
 
+      global_counter++;
+
       int c;
 
       register_param(threshold, "threshold", "The threshold as in the deface algorithm");
+      pythonReady = false;
 
       // Initialise the ScreenGeometry which will help us to locate pixels on screen.
       geo = new ScreenGeometry();
@@ -84,37 +84,42 @@ public:
       }
       for(c=0;c<geo->h*2;c++)
           yprecal[c] = geo->w*c;
-      for(c=0;c<256;c++) 
+      for(c=0;c<256;c++)
           powprecal[c] = c*c;
 
-      Py_Initialize();
-      //gstate = PyGILState_Ensure();
+      // We need this gruesome global id to make sure we don't
+      // initalise more than one interpreter per process.
+      if (global_counter == 2) {
+          Py_Initialize();
+          fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
 
-      moduleName = "deface.deface";
-      get_anonymized_image = "get_anonymized_image";
-      /* Error checking of pName left out */
+          moduleName = "deface.deface";
+          get_anonymized_image = "get_anonymized_image";
 
-      //pModule = PyImport_ImportModule("deface.deface");
+          gstate = PyGILState_Ensure();
+          pModule = PyImport_ImportModule("deface.deface");
 
-      //if (pModule != NULL) {
+          if (pModule != NULL) {
+              pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
+              /* pFunc is a new reference */
 
-      //    pFunc = PyObject_GetAttrString(pModule, get_anonymized_image);
-      //    /* pFunc is a new reference */
+              if (pFunc && PyCallable_Check(pFunc)) {
+                  fprintf(stdout, "Setting pythonReady to true\n");
+                  pythonReady = true;
+              }
+              else {
+                  if (PyErr_Occurred()) {
+                      PyErr_Print();
+                      fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
+                  }
+              }
 
-      //    if (pFunc && PyCallable_Check(pFunc)) {
-      //        fprintf(stderr, "found get_anonymized_image\n");
-      //    }
-      //    else {
-      //        if (PyErr_Occurred()) {
-      //            PyErr_Print();
-      //            fprintf(stderr, "Cannot find function \"%s\"\n", get_anonymized_image);
-      //        }
-      //    }
+          } else {
+              PyErr_Print();
+              fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
+          }
 
-      //} else {
-      //    PyErr_Print();
-      //    fprintf(stderr, "Failed to load \"%s\"\n", moduleName);
-      //}
+      }
 
   }
 
@@ -127,22 +132,60 @@ public:
     }
     delete geo;
 
-    fprintf(stderr, "Shutting down everything\n");
-    //Py_DECREF(pModule);
-    //PyGILState_Release(gstate);
-    Py_FinalizeEx();
+    if (global_counter == 2) {
+
+        fprintf(stdout, "Deface destructor called\n");
+        Py_DECREF(pFunc);
+        Py_DECREF(pModule);
+        PyGILState_Release(gstate);
+        Py_Finalize();
+
+    }
+
   }
 
   virtual void update(double time, uint32_t* out, const uint32_t* in) {
 
     //noop
     int x, y, t;
+    PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
-    for (x=(int)0;x<geo->w;x++) {
-        for (y=(int)0;y<geo->h;y++) {
-          // Copy original color
-          *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+    if (pythonReady) {
+        pArgs = PyTuple_New(6); // get_anonymized_image has 6 arguments
+
+        // def get_anonymized_image(frame,
+        //                          threshold: float,
+        //                          replacewith: str,
+        //                          mask_scale: float,
+        //                          ellipse: bool,
+        //                          draw_scores: bool,
+        //                          ):
+
+        pFrame       = PyUnicode_DecodeFSDefault("lol");
+        pReplaceWith = PyUnicode_DecodeFSDefault("blur");
+        pThreshold   = PyFloat_FromDouble((double)threshold);
+        pMaskScale   = PyFloat_FromDouble(1.3);
+        pEllipse     = PyBool_FromLong(1L);
+        pDrawScores  = PyBool_FromLong(0L);
+
+        PyTuple_SetItem(pArgs, 0, pFrame);
+        PyTuple_SetItem(pArgs, 1, pThreshold);
+        PyTuple_SetItem(pArgs, 2, pReplaceWith);
+        PyTuple_SetItem(pArgs, 3, pMaskScale);
+        PyTuple_SetItem(pArgs, 4, pEllipse);
+        PyTuple_SetItem(pArgs, 5, pDrawScores);
+
+        pValue = PyObject_CallObject(pFunc, pArgs);
+
+    } else {
+
+        for (x=(int)0;x<geo->w;x++) {
+            for (y=(int)0;y<geo->h;y++) {
+                // Copy original color
+                *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+            }
         }
+
     }
 
   }
@@ -156,8 +199,13 @@ private:
   int32_t *conBuffer;
   int *yprecal;
   uint16_t powprecal[256];
+  bool pythonReady;
+
+  static int global_counter;
 
 };
+
+int Deface::global_counter = 0;
 
 frei0r::construct<Deface> plugin("Deface",
                                   "Defaceify video, do a form of edge detect",
