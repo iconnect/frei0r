@@ -31,6 +31,7 @@
 #define GREEN(n) ((n>>8) & 0x000000FF)
 #define BLUE(n)  (n & 0x000000FF)
 #define RGB(r,g,b) ((r<<16) + (g <<8) + (b))
+#define RGBA(r,g,b,a) ((r<<24) + (g <<16) + (b<<8) + (a))
 
 #define BOOST(n) { \
   if((*p = *p<<4)<0)>>n; \
@@ -89,15 +90,13 @@ public:
       }
       for(c=0;c<geo->h*2;c++)
           yprecal[c] = geo->w*c;
-      for(c=0;c<256;c++)
-          powprecal[c] = c*c;
 
       // We need this gruesome global id to make sure we don't
       // initalise more than one interpreter per process.
       if (global_counter == 2) {
           Py_Initialize();
           gstate = PyGILState_Ensure();
-          fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
+          //fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
 
           defaceModule   = (char*)"deface.deface";
           imageIoModule  = (char*)"imageio";
@@ -117,7 +116,7 @@ public:
               /* pGetAnonymizedImage is a new reference */
 
               if (pGetAnonymizedImage && PyCallable_Check(pGetAnonymizedImage)) {
-                  fprintf(stdout, "Setting pythonReady to true\n");
+                  //fprintf(stdout, "Setting pythonReady to true\n");
                   pythonReady = true;
               }
               else {
@@ -252,7 +251,7 @@ public:
     //noop
     int x, y, t;
     PyObject *pRawFrameBytes, *pTempBytesIOBuffer, *pNumpyInt8, *pNumpyArray, *pNumpyArray2, *pNumpyReshape;
-    PyObject *pNumpyToBytes, *pOutBytes;
+    PyObject *pNumpyToBytes, *pOutBytes, *pNumpyDelete, *pFrameWithAlpha;
     PyObject *pImgSizeArgs, *pPilImage, *pPilToBytes, *pPilImageToBytes, *pPilImageSave, *pPilImagePng;
     PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
@@ -261,7 +260,7 @@ public:
         // Copy the frame into conBuffer
         memcpy((void*)conBuffer, (void*)in, geo->size);
 
-        PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
+        //PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
 
         pRawFrameBytes = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
         pNumpyInt8     = PyObject_GetAttrString(pNumpyModule, "uint8");
@@ -285,21 +284,30 @@ public:
 
         pArgs = PyTuple_New(2);
         pImgSizeArgs = PyTuple_New(3);
-        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(960L));  // height first.
+        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(geo->h));  // height first.
         PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(geo->w));
-        PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(3L));
-        PyObject_Print(pImgSizeArgs, stderr, 0);
+        PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(4L)); // (r,g,b,alpha)
 
         PyTuple_SetItem(pArgs, 0, pImgSizeArgs);
-        pFrame = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
+        pFrameWithAlpha = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
         Py_DECREF(pImgSizeArgs);
+        Py_DECREF(pArgs);
+
+        //PyObject_Print(pFrameWithAlpha, stderr, 0);
+
+        // Drop the alpha column
+        pNumpyDelete = PyObject_GetAttrString(pNumpyModule, "delete");
+        pArgs = PyTuple_New(3);
+        PyTuple_SetItem(pArgs, 0, pFrameWithAlpha);
+        PyTuple_SetItem(pArgs, 1, PyLong_FromLong(3L));
+        PyTuple_SetItem(pArgs, 2, PyLong_FromLong(2L));
+        pFrame = PyObject_CallObject(pNumpyDelete, pArgs);
         Py_DECREF(pArgs);
 
         //PyObject_Print(pFrame, stderr, 0);
 
         if (pFrame == NULL) {
             fprintf(stderr, "Failed to reshape numpy array\n");
-            PyObject_Print(pNumpyArray, stderr, 0);
             PyErr_Print();
         }
 
@@ -332,21 +340,77 @@ public:
         if (pValue != NULL) {
 
             // Copy the raw bytes back into the *out pointer.
-            pNumpyToBytes = PyObject_GetAttrString(pValue, "tobytes");
+            pNumpyToBytes = PyObject_GetAttrString(pFrame, "tobytes");
 
             pArgs = PyTuple_New(0);
             pOutBytes = PyObject_CallObject(pNumpyToBytes, pArgs);
             Py_DECREF(pArgs);
-            Py_DECREF(pValue);
+
+            PyObject *test;
+            char *pRawBytes, *pMyTest, *slab;
+            pRawBytes = PyBytes_AsString(pOutBytes);
+
+            // Test here
+            slab = (char*)malloc(sizeof(char) * (geo->w * geo->h * 3));
+            for (x=(int)0;x<geo->w;x++) {
+                for (y=(int)0;y<geo->h;y++) {
+
+                  char r,g,b;
+                  int32_t pixel;
+
+                  pixel = *(in+x+yprecal[y]);
+                  r = RED(pixel);
+                  g = GREEN(pixel);
+                  b = BLUE(pixel);
+
+                  *(slab+x+yprecal[y]) = r;
+                  *(slab+x+yprecal[y] + 1) = g;
+                  *(slab+x+yprecal[y] + 2) = b;
+
+                }
+            }
+
+            test = PyBytes_FromStringAndSize(slab, 3 * (geo->w * geo->h));
+            pMyTest   = PyBytes_AsString(test);
+
+            /* What we know
+               conBuffer has the right data, if we do:
+
+               *(out+x+yprecal[y]) = *(conBuffer+x+yprecal[y]);
+
+               it works. This already breaks everything:
+
+               test = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
+
+               likely due to the (char*) conversion.
+
+            */
 
             // Store
             for (x=(int)0;x<geo->w;x++) {
                 for (y=(int)0;y<geo->h;y++) {
-                    // Copy original color
-                    *(out+x+yprecal[y]) = *(((char*)pOutBytes)+x+yprecal[y]);
+                  //*(out+x+yprecal[y]) = *(pMyTest+x+yprecal[y]);
+
+                  char r,g,b;
+                  int32_t rgba;
+
+                  //r = *(slab + (x * geo->w) + y);
+                  //g = *(slab + (x * geo->w) + y + 1);
+                  //b = *(slab + (x * geo->w) + y + 2);
+
+                  r = *(slab+x+yprecal[y]);
+                  g = *(slab+x+yprecal[y] + 1);
+                  b = *(slab+x+yprecal[y] + 2);
+
+                  rgba = RGBA(r,g,b, 0xFF);
+
+                  *(out+x+yprecal[y]) = rgba;
+
+
                 }
             }
             Py_DECREF(pOutBytes);
+            Py_DECREF(pValue);
 
         }
         else {
@@ -360,7 +424,7 @@ public:
         for (x=(int)0;x<geo->w;x++) {
             for (y=(int)0;y<geo->h;y++) {
                 // Copy original color
-                *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+                //*(out+x+yprecal[y]) = *(in+x+yprecal[y]);
             }
         }
 
@@ -376,7 +440,6 @@ private:
   int32_t *prePixBuffer;
   int32_t *conBuffer;
   int *yprecal;
-  uint16_t powprecal[256];
   bool pythonReady;
 
   static int global_counter;
