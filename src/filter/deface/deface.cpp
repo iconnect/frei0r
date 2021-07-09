@@ -201,7 +201,7 @@ public:
 
           if (pNumpyModule != NULL) {
 
-              numpy_fromstring = (char*)"frombuffer";
+              numpy_fromstring = (char*)"fromstring";
 
               pNumpyFromString = PyObject_GetAttrString(pNumpyModule, numpy_fromstring);
               pNumpyAsArray    = PyObject_GetAttrString(pNumpyModule, "asarray");
@@ -262,7 +262,7 @@ public:
 
         PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
 
-        pRawFrameBytes = PyBytes_FromString((char*)conBuffer);
+        pRawFrameBytes = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
         pNumpyInt8     = PyObject_GetAttrString(pNumpyModule, "uint8");
 
         pArgs = PyTuple_New(2);
@@ -276,22 +276,25 @@ public:
             PyErr_Print();
         }
 
-        PyObject_Print(pNumpyArray, stderr, 0);
+        //PyObject_Print(pNumpyArray, stderr, 0);
 
         // Reshape the array.
         pNumpyReshape = PyObject_GetAttrString(pNumpyArray, "reshape");
-        PyObject_Print(pNumpyReshape, stderr, 0);
+        //PyObject_Print(pNumpyReshape, stderr, 0);
 
         pArgs = PyTuple_New(2);
-        pImgSizeArgs = PyTuple_New(2);
-        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(4L));
-        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(2L));
+        pImgSizeArgs = PyTuple_New(3);
+        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(960L));  // height first.
+        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(geo->w));
+        PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(3L));
         PyObject_Print(pImgSizeArgs, stderr, 0);
 
         PyTuple_SetItem(pArgs, 0, pImgSizeArgs);
         pFrame = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
         Py_DECREF(pImgSizeArgs);
         Py_DECREF(pArgs);
+
+        //PyObject_Print(pFrame, stderr, 0);
 
         if (pFrame == NULL) {
             fprintf(stderr, "Failed to reshape numpy array\n");
@@ -315,6 +318,8 @@ public:
         pEllipse     = PyBool_FromLong(1L);
         pDrawScores  = PyBool_FromLong(0L);
 
+        PyObject_Print(pThreshold, stderr, 0);
+
         PyTuple_SetItem(pArgs, 0, pFrame);
         PyTuple_SetItem(pArgs, 1, pThreshold);
         PyTuple_SetItem(pArgs, 2, pReplaceWith);
@@ -326,7 +331,11 @@ public:
 
         Py_DECREF(pArgs);
         if (pValue != NULL) {
-            printf("Result of call: %ld\n", PyLong_AsLong(pValue));
+
+            // Copy the raw bytes back into the *out pointer.
+
+
+
             Py_DECREF(pValue);
         }
         else {
