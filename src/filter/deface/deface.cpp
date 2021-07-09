@@ -260,9 +260,35 @@ public:
         // Copy the frame into conBuffer
         memcpy((void*)conBuffer, (void*)in, geo->size);
 
+        PyObject *test;
+        char *pRawBytes, *pMyTest, *slab;
+
+        slab = (char*)malloc(sizeof(char) * (geo->w * geo->h * 3));
+        for (x=(int)0;x<geo->w;x++) {
+            for (y=(int)0;y<geo->h;y++) {
+
+              char r,g,b;
+              int32_t pixel;
+
+              pixel = *(in+x+yprecal[y]);
+              r = RED(pixel);
+              g = GREEN(pixel);
+              b = BLUE(pixel);
+
+              *(slab+x+yprecal[y]) = r;
+              *(slab+x+yprecal[y] + 1) = g;
+              *(slab+x+yprecal[y] + 2) = b;
+
+            }
+        }
+
+        pRawFrameBytes = PyBytes_FromStringAndSize(slab, 3 * (geo->w * geo->h));
+
+
+
         //PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
 
-        pRawFrameBytes = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
+        //pRawFrameBytes = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
         pNumpyInt8     = PyObject_GetAttrString(pNumpyModule, "uint8");
 
         pArgs = PyTuple_New(2);
@@ -286,30 +312,30 @@ public:
         pImgSizeArgs = PyTuple_New(3);
         PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(geo->h));  // height first.
         PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(geo->w));
-        PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(4L)); // (r,g,b,alpha)
+        PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(3L)); // (r,g,b)
 
         PyTuple_SetItem(pArgs, 0, pImgSizeArgs);
-        pFrameWithAlpha = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
+        pFrame = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
         Py_DECREF(pImgSizeArgs);
         Py_DECREF(pArgs);
 
         //PyObject_Print(pFrameWithAlpha, stderr, 0);
 
         // Drop the alpha column
-        pNumpyDelete = PyObject_GetAttrString(pNumpyModule, "delete");
-        pArgs = PyTuple_New(3);
-        PyTuple_SetItem(pArgs, 0, pFrameWithAlpha);
-        PyTuple_SetItem(pArgs, 1, PyLong_FromLong(3L));
-        PyTuple_SetItem(pArgs, 2, PyLong_FromLong(2L));
-        pFrame = PyObject_CallObject(pNumpyDelete, pArgs);
-        Py_DECREF(pArgs);
+        //pNumpyDelete = PyObject_GetAttrString(pNumpyModule, "delete");
+        //pArgs = PyTuple_New(3);
+        //PyTuple_SetItem(pArgs, 0, pFrameWithAlpha);
+        //PyTuple_SetItem(pArgs, 1, PyLong_FromLong(3L));
+        //PyTuple_SetItem(pArgs, 2, PyLong_FromLong(2L));
+        //pFrame = PyObject_CallObject(pNumpyDelete, pArgs);
+        //Py_DECREF(pArgs);
 
-        //PyObject_Print(pFrame, stderr, 0);
+        ////PyObject_Print(pFrame, stderr, 0);
 
-        if (pFrame == NULL) {
-            fprintf(stderr, "Failed to reshape numpy array\n");
-            PyErr_Print();
-        }
+        //if (pFrame == NULL) {
+        //    fprintf(stderr, "Failed to reshape numpy array\n");
+        //    PyErr_Print();
+        //}
 
         pArgs = PyTuple_New(6); // get_anonymized_image has 6 arguments
 
@@ -398,9 +424,9 @@ public:
                   //g = *(slab + (x * geo->w) + y + 1);
                   //b = *(slab + (x * geo->w) + y + 2);
 
-                  r = *(slab+x+yprecal[y]);
-                  g = *(slab+x+yprecal[y] + 1);
-                  b = *(slab+x+yprecal[y] + 2);
+                  r = *(pRawBytes+x+yprecal[y]);
+                  g = *(pRawBytes+x+yprecal[y] + 1);
+                  b = *(pRawBytes+x+yprecal[y] + 2);
 
                   rgba = RGBA(r,g,b, 0xFF);
 
