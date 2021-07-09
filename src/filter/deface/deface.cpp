@@ -252,6 +252,7 @@ public:
     //noop
     int x, y, t;
     PyObject *pRawFrameBytes, *pTempBytesIOBuffer, *pNumpyInt8, *pNumpyArray, *pNumpyArray2, *pNumpyReshape;
+    PyObject *pNumpyToBytes, *pOutBytes;
     PyObject *pImgSizeArgs, *pPilImage, *pPilToBytes, *pPilImageToBytes, *pPilImageSave, *pPilImagePng;
     PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
@@ -318,8 +319,6 @@ public:
         pEllipse     = PyBool_FromLong(1L);
         pDrawScores  = PyBool_FromLong(0L);
 
-        PyObject_Print(pThreshold, stderr, 0);
-
         PyTuple_SetItem(pArgs, 0, pFrame);
         PyTuple_SetItem(pArgs, 1, pThreshold);
         PyTuple_SetItem(pArgs, 2, pReplaceWith);
@@ -333,10 +332,22 @@ public:
         if (pValue != NULL) {
 
             // Copy the raw bytes back into the *out pointer.
+            pNumpyToBytes = PyObject_GetAttrString(pValue, "tobytes");
 
-
-
+            pArgs = PyTuple_New(0);
+            pOutBytes = PyObject_CallObject(pNumpyToBytes, pArgs);
+            Py_DECREF(pArgs);
             Py_DECREF(pValue);
+
+            // Store
+            for (x=(int)0;x<geo->w;x++) {
+                for (y=(int)0;y<geo->h;y++) {
+                    // Copy original color
+                    *(out+x+yprecal[y]) = *(((char*)pOutBytes)+x+yprecal[y]);
+                }
+            }
+            Py_DECREF(pOutBytes);
+
         }
         else {
             PyErr_Print();
