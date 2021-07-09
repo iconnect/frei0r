@@ -57,13 +57,13 @@ public:
 
   f0r_param_double threshold;
   // module names
-  char *defaceModule, *imageIoModule, *pilImageModule, *ioModule;
+  char *defaceModule, *imageIoModule, *pilImageModule, *ioModule, *numpyModule;
   // function names
-  char *get_anonymized_image, *imread, *pilFromBytes, *BytesIO;
+  char *get_anonymized_image, *imread, *pilFromBytes, *BytesIO, *numpy_fromstring;
   // modules
-  PyObject *pDefaceModule, *pImageIoModule, *pPilImageModule, *pIoModule;
+  PyObject *pDefaceModule, *pImageIoModule, *pPilImageModule, *pIoModule, *pNumpyModule;
   // functions
-  PyObject *pGetAnonymizedImage, *pImread, *pPilImageFromBytes, *pBytesIO;
+  PyObject *pGetAnonymizedImage, *pImread, *pPilImageFromBytes, *pBytesIO, *pNumpyFromString, *pNumpyAsArray;
   PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
@@ -103,12 +103,14 @@ public:
           imageIoModule  = (char*)"imageio";
           ioModule       = (char*)"io";
           pilImageModule = (char*)"PIL.Image";
+          numpyModule    = (char*)"numpy";
           get_anonymized_image = (char*)"get_anonymized_image";
 
           pIoModule       = PyImport_ImportModule(ioModule);
           pDefaceModule   = PyImport_ImportModule(defaceModule);
           pImageIoModule  = PyImport_ImportModule(imageIoModule);
           pPilImageModule = PyImport_ImportModule(pilImageModule);
+          pNumpyModule    = PyImport_ImportModule(numpyModule);
 
           if (pDefaceModule != NULL) {
               pGetAnonymizedImage = PyObject_GetAttrString(pDefaceModule, get_anonymized_image);
@@ -197,6 +199,29 @@ public:
               fprintf(stderr, "Failed to load \"%s\"\n", ioModule);
           }
 
+          if (pNumpyModule != NULL) {
+
+              numpy_fromstring = (char*)"frombuffer";
+
+              pNumpyFromString = PyObject_GetAttrString(pNumpyModule, numpy_fromstring);
+              pNumpyAsArray    = PyObject_GetAttrString(pNumpyModule, "asarray");
+
+              if (pNumpyFromString && PyCallable_Check(pNumpyFromString)) {
+                  pythonReady = pythonReady && true;
+              }
+              else {
+                  pythonReady = false;
+                  if (PyErr_Occurred()) {
+                      PyErr_Print();
+                      fprintf(stderr, "Cannot find function \"%s\"\n", numpy_fromstring);
+                  }
+              }
+
+          } else {
+              PyErr_Print();
+              fprintf(stderr, "Failed to load \"%s\"\n", numpyModule);
+          }
+
       }
 
   }
@@ -226,7 +251,7 @@ public:
 
     //noop
     int x, y, t;
-    PyObject *pRawFrameBytes, *pTempBytesIOBuffer;
+    PyObject *pRawFrameBytes, *pTempBytesIOBuffer, *pNumpyInt8, *pNumpyArray, *pNumpyArray2, *pNumpyReshape;
     PyObject *pImgSizeArgs, *pPilImage, *pPilToBytes, *pPilImageToBytes, *pPilImageSave, *pPilImagePng;
     PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
@@ -235,61 +260,42 @@ public:
         // Copy the frame into conBuffer
         memcpy((void*)conBuffer, (void*)in, geo->size);
 
+        PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
+
         pRawFrameBytes = PyBytes_FromString((char*)conBuffer);
+        pNumpyInt8     = PyObject_GetAttrString(pNumpyModule, "uint8");
 
-        // We need to construct a raw image with PIL, then feed it
-        // into imread, and finally feed the result back into deface.
-        pImgSizeArgs = PyTuple_New(2); // the tuple for the size of the image
-        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(64L));
-        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(64L));
-
-        pArgs = PyTuple_New(3); // frombytes has 3 arguments
-        PyTuple_SetItem(pArgs, 0, PyUnicode_DecodeFSDefault("RGBA"));
-        PyTuple_SetItem(pArgs, 1, pImgSizeArgs);
-        PyTuple_SetItem(pArgs, 2, pRawFrameBytes);
-        pPilImage = PyObject_CallObject(pPilImageFromBytes, pArgs);
-        Py_DECREF(pImgSizeArgs);
+        pArgs = PyTuple_New(2);
+        PyTuple_SetItem(pArgs, 0, pRawFrameBytes);
+        PyTuple_SetItem(pArgs, 1, pNumpyInt8);
+        pNumpyArray = PyObject_CallObject(pNumpyFromString, pArgs);
         Py_DECREF(pArgs);
 
-        if (pPilImage == NULL) {
-            fprintf(stderr, "Failed to create PIL image from raw ffmpeg frame\n");
+        if (pNumpyAsArray == NULL) {
+            fprintf(stderr, "Failed to create numpy array from raw ffmpeg frame\n");
             PyErr_Print();
         }
 
-        // Convert to png and save in a buffer object.
-        pPilImageSave = PyObject_GetAttrString(pPilImage, "save");
+        PyObject_Print(pNumpyArray, stderr, 0);
 
-        if (pPilImageSave && PyCallable_Check(pPilImageSave)) {
-            pArgs = PyTuple_New(0);
-            pTempBytesIOBuffer = PyObject_CallObject(pBytesIO, pArgs);
-            Py_DECREF(pArgs);
+        // Reshape the array.
+        pNumpyReshape = PyObject_GetAttrString(pNumpyArray, "reshape");
+        PyObject_Print(pNumpyReshape, stderr, 0);
 
-            if (pTempBytesIOBuffer == NULL) {
-                PyErr_Print();
-                fprintf(stderr, "Failed to create BytesIO buffer\n");
-            }
+        pArgs = PyTuple_New(2);
+        pImgSizeArgs = PyTuple_New(2);
+        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(4L));
+        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(2L));
+        PyObject_Print(pImgSizeArgs, stderr, 0);
 
-            pArgs = PyTuple_New(2);
-            PyTuple_SetItem(pArgs, 0, pTempBytesIOBuffer);
-            PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("png"));
-            pPilToBytes = PyObject_CallObject(pPilImageSave, pArgs);
-            Py_DECREF(pArgs);
-
-            if (pPilToBytes == NULL) {
-                fprintf(stderr, "Failed to save PIL image as png into BytesIO buffer\n");
-                PyErr_Print();
-            }
-        } else {
-                PyErr_Print();
-        }
-
-        pArgs = PyTuple_New(2); // imread has 1 arg
-        PyTuple_SetItem(pArgs, 0, pTempBytesIOBuffer);
-        PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("png"));
-        pFrame = PyObject_CallObject(pImread, pArgs);
+        PyTuple_SetItem(pArgs, 0, pImgSizeArgs);
+        pFrame = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
+        Py_DECREF(pImgSizeArgs);
         Py_DECREF(pArgs);
 
         if (pFrame == NULL) {
+            fprintf(stderr, "Failed to reshape numpy array\n");
+            PyObject_Print(pNumpyArray, stderr, 0);
             PyErr_Print();
         }
 
