@@ -56,9 +56,14 @@ class Deface: public frei0r::filter {
 public:
 
   f0r_param_double threshold;
-  char *defaceModule, *imageIoModule;
-  char *get_anonymized_image, *imread;
-  PyObject *pDefaceModule, *pImageIoModule, *pGetAnonymizedImage, *pImread;
+  // module names
+  char *defaceModule, *imageIoModule, *pilImageModule, *ioModule;
+  // function names
+  char *get_anonymized_image, *imread, *pilFromBytes, *BytesIO;
+  // modules
+  PyObject *pDefaceModule, *pImageIoModule, *pPilImageModule, *pIoModule;
+  // functions
+  PyObject *pGetAnonymizedImage, *pImread, *pPilImageFromBytes, *pBytesIO;
   PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
@@ -94,11 +99,16 @@ public:
           gstate = PyGILState_Ensure();
           fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
 
-          defaceModule = "deface.deface";
-          get_anonymized_image = "get_anonymized_image";
+          defaceModule   = (char*)"deface.deface";
+          imageIoModule  = (char*)"imageio";
+          ioModule       = (char*)"io";
+          pilImageModule = (char*)"PIL.Image";
+          get_anonymized_image = (char*)"get_anonymized_image";
 
-          pDefaceModule  = PyImport_ImportModule("deface.deface");
-          pImageIoModule = PyImport_ImportModule("imageio");
+          pIoModule       = PyImport_ImportModule(ioModule);
+          pDefaceModule   = PyImport_ImportModule(defaceModule);
+          pImageIoModule  = PyImport_ImportModule(imageIoModule);
+          pPilImageModule = PyImport_ImportModule(pilImageModule);
 
           if (pDefaceModule != NULL) {
               pGetAnonymizedImage = PyObject_GetAttrString(pDefaceModule, get_anonymized_image);
@@ -123,7 +133,7 @@ public:
 
           if (pImageIoModule != NULL) {
 
-              imread = "imread";
+              imread = (char*)"imread";
 
               pImread = PyObject_GetAttrString(pImageIoModule, imread);
 
@@ -141,6 +151,50 @@ public:
           } else {
               PyErr_Print();
               fprintf(stderr, "Failed to load \"%s\"\n", imageIoModule);
+          }
+
+          if (pPilImageModule != NULL) {
+
+              pilFromBytes = (char*)"frombytes";
+
+              pPilImageFromBytes = PyObject_GetAttrString(pPilImageModule, pilFromBytes);
+
+              if (pPilImageFromBytes && PyCallable_Check(pPilImageFromBytes)) {
+                  pythonReady = pythonReady && true;
+              }
+              else {
+                  pythonReady = false;
+                  if (PyErr_Occurred()) {
+                      PyErr_Print();
+                      fprintf(stderr, "Cannot find function \"%s\"\n", pilFromBytes);
+                  }
+              }
+
+          } else {
+              PyErr_Print();
+              fprintf(stderr, "Failed to load \"%s\"\n", pilImageModule);
+          }
+
+          if (pIoModule != NULL) {
+
+              BytesIO = (char*)"BytesIO";
+
+              pBytesIO = PyObject_GetAttrString(pIoModule, BytesIO);
+
+              if (pBytesIO && PyCallable_Check(pBytesIO)) {
+                  pythonReady = pythonReady && true;
+              }
+              else {
+                  pythonReady = false;
+                  if (PyErr_Occurred()) {
+                      PyErr_Print();
+                      fprintf(stderr, "Cannot find function \"%s\"\n", BytesIO);
+                  }
+              }
+
+          } else {
+              PyErr_Print();
+              fprintf(stderr, "Failed to load \"%s\"\n", ioModule);
           }
 
       }
@@ -172,19 +226,66 @@ public:
 
     //noop
     int x, y, t;
-    PyObject *pRawFrameBytes;
+    PyObject *pRawFrameBytes, *pTempBytesIOBuffer;
+    PyObject *pImgSizeArgs, *pPilImage, *pPilToBytes, *pPilImageToBytes, *pPilImageSave, *pPilImagePng;
     PyObject *pArgs, *pFrame, *pThreshold, *pReplaceWith, *pMaskScale, *pEllipse, *pDrawScores, *pValue;
 
     if (pythonReady) {
 
         // Copy the frame into conBuffer
-        memcpy(&in, &conBuffer, geo->size);
+        memcpy((void*)conBuffer, (void*)in, geo->size);
 
         pRawFrameBytes = PyBytes_FromString((char*)conBuffer);
 
+        // We need to construct a raw image with PIL, then feed it
+        // into imread, and finally feed the result back into deface.
+        pImgSizeArgs = PyTuple_New(2); // the tuple for the size of the image
+        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(64L));
+        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(64L));
+
+        pArgs = PyTuple_New(3); // frombytes has 3 arguments
+        PyTuple_SetItem(pArgs, 0, PyUnicode_DecodeFSDefault("RGBA"));
+        PyTuple_SetItem(pArgs, 1, pImgSizeArgs);
+        PyTuple_SetItem(pArgs, 2, pRawFrameBytes);
+        pPilImage = PyObject_CallObject(pPilImageFromBytes, pArgs);
+        Py_DECREF(pImgSizeArgs);
+        Py_DECREF(pArgs);
+
+        if (pPilImage == NULL) {
+            fprintf(stderr, "Failed to create PIL image from raw ffmpeg frame\n");
+            PyErr_Print();
+        }
+
+        // Convert to png and save in a buffer object.
+        pPilImageSave = PyObject_GetAttrString(pPilImage, "save");
+
+        if (pPilImageSave && PyCallable_Check(pPilImageSave)) {
+            pArgs = PyTuple_New(0);
+            pTempBytesIOBuffer = PyObject_CallObject(pBytesIO, pArgs);
+            Py_DECREF(pArgs);
+
+            if (pTempBytesIOBuffer == NULL) {
+                PyErr_Print();
+                fprintf(stderr, "Failed to create BytesIO buffer\n");
+            }
+
+            pArgs = PyTuple_New(2);
+            PyTuple_SetItem(pArgs, 0, pTempBytesIOBuffer);
+            PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("png"));
+            pPilToBytes = PyObject_CallObject(pPilImageSave, pArgs);
+            Py_DECREF(pArgs);
+
+            if (pPilToBytes == NULL) {
+                fprintf(stderr, "Failed to save PIL image as png into BytesIO buffer\n");
+                PyErr_Print();
+            }
+        } else {
+                PyErr_Print();
+        }
+
         pArgs = PyTuple_New(2); // imread has 1 arg
-        PyTuple_SetItem(pArgs, 0, pRawFrameBytes);
-        PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("yuv420p"));
+        PyTuple_SetItem(pArgs, 0, pTempBytesIOBuffer);
+        PyTuple_SetItem(pArgs, 1, PyUnicode_DecodeFSDefault("png"));
         pFrame = PyObject_CallObject(pImread, pArgs);
         Py_DECREF(pArgs);
 
