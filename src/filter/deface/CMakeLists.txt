@@ -20,7 +20,7 @@ execute_process(COMMAND echo ${PYTHON_CONFIG_LIBS_RAW} | sed "s/-I//g" OUTPUT_VA
 include_directories(${PYTHON_CONFIG_LIBS})
 
 # fix later.
-include_directories(/Users/adinapoli/.pyenv/versions/3.6-dev/include/python3.6m /Users/adinapoli/.pyenv/versions/3.6-dev/include/python3.6m)
+include_directories(/Users/adinapoli/.pyenv/versions/3.6-dev/include/python3.6m)
 link_directories(/Users/adinapoli/.pyenv/versions/3.6-dev/lib)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")

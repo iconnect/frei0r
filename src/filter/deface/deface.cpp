@@ -31,7 +31,6 @@
 #define GREEN(n) ((n>>8) & 0x000000FF)
 #define BLUE(n)  (n & 0x000000FF)
 #define RGB(r,g,b) ((r<<16) + (g <<8) + (b))
-#define RGBA(r,g,b,a) ((r<<24) + (g <<16) + (b<<8) + (a))
 
 #define BOOST(n) { \
   if((*p = *p<<4)<0)>>n; \
@@ -58,13 +57,13 @@ public:
 
   f0r_param_double threshold;
   // module names
-  char *defaceModule, *imageIoModule, *pilImageModule, *ioModule, *numpyModule;
+  char *defaceModule, *numpyModule;
   // function names
-  char *get_anonymized_image, *imread, *pilFromBytes, *BytesIO, *numpy_fromstring;
+  char *get_anonymized_image, *numpy_fromstring;
   // modules
-  PyObject *pDefaceModule, *pImageIoModule, *pPilImageModule, *pIoModule, *pNumpyModule;
+  PyObject *pDefaceModule, *pNumpyModule;
   // functions
-  PyObject *pGetAnonymizedImage, *pImread, *pPilImageFromBytes, *pBytesIO, *pNumpyFromString, *pNumpyAsArray;
+  PyObject *pGetAnonymizedImage, *pNumpyFromString, *pNumpyAsArray;
   PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
@@ -83,8 +82,7 @@ public:
       geo->size =  width*height*sizeof(uint32_t);
 
       if ( geo->size > 0 ) {
-          prePixBuffer = (int32_t*)malloc(geo->size);
-          conBuffer = (int32_t*)malloc(geo->size);
+          frameBuffer = (char*)malloc(sizeof(char) * (geo->w * geo->h * 3));
 
           yprecal = (int*)malloc(geo->h*2*sizeof(int));
       }
@@ -99,16 +97,10 @@ public:
           //fprintf(stdout, "Constructor called \"%d\"\n", global_counter);
 
           defaceModule   = (char*)"deface.deface";
-          imageIoModule  = (char*)"imageio";
-          ioModule       = (char*)"io";
-          pilImageModule = (char*)"PIL.Image";
           numpyModule    = (char*)"numpy";
           get_anonymized_image = (char*)"get_anonymized_image";
 
-          pIoModule       = PyImport_ImportModule(ioModule);
           pDefaceModule   = PyImport_ImportModule(defaceModule);
-          pImageIoModule  = PyImport_ImportModule(imageIoModule);
-          pPilImageModule = PyImport_ImportModule(pilImageModule);
           pNumpyModule    = PyImport_ImportModule(numpyModule);
 
           if (pDefaceModule != NULL) {
@@ -130,72 +122,6 @@ public:
           } else {
               PyErr_Print();
               fprintf(stderr, "Failed to load \"%s\"\n", defaceModule);
-          }
-
-          if (pImageIoModule != NULL) {
-
-              imread = (char*)"imread";
-
-              pImread = PyObject_GetAttrString(pImageIoModule, imread);
-
-              if (pImread && PyCallable_Check(pImread)) {
-                  pythonReady = pythonReady && true;
-              }
-              else {
-                  pythonReady = false;
-                  if (PyErr_Occurred()) {
-                      PyErr_Print();
-                      fprintf(stderr, "Cannot find function \"%s\"\n", imread);
-                  }
-              }
-
-          } else {
-              PyErr_Print();
-              fprintf(stderr, "Failed to load \"%s\"\n", imageIoModule);
-          }
-
-          if (pPilImageModule != NULL) {
-
-              pilFromBytes = (char*)"frombytes";
-
-              pPilImageFromBytes = PyObject_GetAttrString(pPilImageModule, pilFromBytes);
-
-              if (pPilImageFromBytes && PyCallable_Check(pPilImageFromBytes)) {
-                  pythonReady = pythonReady && true;
-              }
-              else {
-                  pythonReady = false;
-                  if (PyErr_Occurred()) {
-                      PyErr_Print();
-                      fprintf(stderr, "Cannot find function \"%s\"\n", pilFromBytes);
-                  }
-              }
-
-          } else {
-              PyErr_Print();
-              fprintf(stderr, "Failed to load \"%s\"\n", pilImageModule);
-          }
-
-          if (pIoModule != NULL) {
-
-              BytesIO = (char*)"BytesIO";
-
-              pBytesIO = PyObject_GetAttrString(pIoModule, BytesIO);
-
-              if (pBytesIO && PyCallable_Check(pBytesIO)) {
-                  pythonReady = pythonReady && true;
-              }
-              else {
-                  pythonReady = false;
-                  if (PyErr_Occurred()) {
-                      PyErr_Print();
-                      fprintf(stderr, "Cannot find function \"%s\"\n", BytesIO);
-                  }
-              }
-
-          } else {
-              PyErr_Print();
-              fprintf(stderr, "Failed to load \"%s\"\n", ioModule);
           }
 
           if (pNumpyModule != NULL) {
@@ -228,8 +154,7 @@ public:
   ~Deface() {
     // Dealloc the ScreenGeometry stuff.
     if ( geo->size > 0 ) {
-      free(prePixBuffer);
-      free(conBuffer);
+      free(frameBuffer);
       free(yprecal);
     }
     delete geo;
@@ -250,6 +175,8 @@ public:
 
     //noop
     int x, y, t;
+    char r,g,b;
+    int32_t pixel;
     PyObject *pRawFrameBytes, *pTempBytesIOBuffer, *pNumpyInt8, *pNumpyArray, *pNumpyArray2, *pNumpyReshape;
     PyObject *pNumpyToBytes, *pOutBytes, *pNumpyDelete, *pFrameWithAlpha;
     PyObject *pImgSizeArgs, *pPilImage, *pPilToBytes, *pPilImageToBytes, *pPilImageSave, *pPilImagePng;
@@ -257,38 +184,35 @@ public:
 
     if (pythonReady) {
 
-        // Copy the frame into conBuffer
-        memcpy((void*)conBuffer, (void*)in, geo->size);
+        int myCols, myRows;
 
-        PyObject *test;
-        char *pRawBytes, *pMyTest, *slab;
+        myCols = geo->w;
+        myRows = geo->h;
 
-        slab = (char*)malloc(sizeof(char) * (geo->w * geo->h * 3));
-        for (x=(int)0;x<geo->w;x++) {
-            for (y=(int)0;y<geo->h;y++) {
+        // Clear the frameBuffer
+        memset((void*)frameBuffer, 0x00, sizeof(char) * (myCols * myRows * 3));
 
-              char r,g,b;
-              int32_t pixel;
+        char *pRawBytes, *pMyTest;
+        int32_t out_pxl, rgba;
 
-              pixel = *(in+x+yprecal[y]);
-              r = RED(pixel);
-              g = GREEN(pixel);
-              b = BLUE(pixel);
+        for (int rows = 0; rows < myRows; rows++) {
 
-              *(slab+x+yprecal[y]) = r;
-              *(slab+x+yprecal[y] + 1) = g;
-              *(slab+x+yprecal[y] + 2) = b;
+            for (int cols = 0; cols < myCols * 3 ; cols+=3) {
+
+              pixel = *(in + (rows * myCols + (cols / 3)));
+              r     = RED(pixel);
+              g     = GREEN(pixel);
+              b     = BLUE(pixel);
+
+              *(frameBuffer+((rows * myCols * 3) + cols))     = r;
+              *(frameBuffer+((rows * myCols * 3) + cols) + 1) = g;
+              *(frameBuffer+((rows * myCols * 3) + cols) + 2) = b;
 
             }
         }
 
-        pRawFrameBytes = PyBytes_FromStringAndSize(slab, 3 * (geo->w * geo->h));
+        pRawFrameBytes = PyBytes_FromStringAndSize(frameBuffer, 3 * myRows * myCols);
 
-
-
-        //PyObject_Print(PyLong_FromLong(geo->size), stderr, 0);
-
-        //pRawFrameBytes = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
         pNumpyInt8     = PyObject_GetAttrString(pNumpyModule, "uint8");
 
         pArgs = PyTuple_New(2);
@@ -297,45 +221,24 @@ public:
         pNumpyArray = PyObject_CallObject(pNumpyFromString, pArgs);
         Py_DECREF(pArgs);
 
-        if (pNumpyAsArray == NULL) {
+        if (pNumpyArray == NULL) {
             fprintf(stderr, "Failed to create numpy array from raw ffmpeg frame\n");
             PyErr_Print();
         }
 
-        //PyObject_Print(pNumpyArray, stderr, 0);
-
         // Reshape the array.
         pNumpyReshape = PyObject_GetAttrString(pNumpyArray, "reshape");
-        //PyObject_Print(pNumpyReshape, stderr, 0);
 
         pArgs = PyTuple_New(2);
         pImgSizeArgs = PyTuple_New(3);
-        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(geo->h));  // height first.
-        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(geo->w));
+        PyTuple_SetItem(pImgSizeArgs, 0, PyLong_FromLong(myRows));  // height first.
+        PyTuple_SetItem(pImgSizeArgs, 1, PyLong_FromLong(myCols));
         PyTuple_SetItem(pImgSizeArgs, 2, PyLong_FromLong(3L)); // (r,g,b)
 
         PyTuple_SetItem(pArgs, 0, pImgSizeArgs);
         pFrame = PyObject_CallObject(pNumpyReshape, pImgSizeArgs);
         Py_DECREF(pImgSizeArgs);
         Py_DECREF(pArgs);
-
-        //PyObject_Print(pFrameWithAlpha, stderr, 0);
-
-        // Drop the alpha column
-        //pNumpyDelete = PyObject_GetAttrString(pNumpyModule, "delete");
-        //pArgs = PyTuple_New(3);
-        //PyTuple_SetItem(pArgs, 0, pFrameWithAlpha);
-        //PyTuple_SetItem(pArgs, 1, PyLong_FromLong(3L));
-        //PyTuple_SetItem(pArgs, 2, PyLong_FromLong(2L));
-        //pFrame = PyObject_CallObject(pNumpyDelete, pArgs);
-        //Py_DECREF(pArgs);
-
-        ////PyObject_Print(pFrame, stderr, 0);
-
-        //if (pFrame == NULL) {
-        //    fprintf(stderr, "Failed to reshape numpy array\n");
-        //    PyErr_Print();
-        //}
 
         pArgs = PyTuple_New(6); // get_anonymized_image has 6 arguments
 
@@ -372,85 +275,49 @@ public:
             pOutBytes = PyObject_CallObject(pNumpyToBytes, pArgs);
             Py_DECREF(pArgs);
 
-            PyObject *test;
-            char *pRawBytes, *pMyTest, *slab;
+            char *pRawBytes, *pMyTest;
             pRawBytes = PyBytes_AsString(pOutBytes);
 
-            // Test here
-            slab = (char*)malloc(sizeof(char) * (geo->w * geo->h * 3));
-            for (x=(int)0;x<geo->w;x++) {
-                for (y=(int)0;y<geo->h;y++) {
+            for (int rows = 0; rows < myRows; rows++) {
 
-                  char r,g,b;
-                  int32_t pixel;
+                for (int cols = 0; cols < myCols * 3 ; cols+=3) {
 
-                  pixel = *(in+x+yprecal[y]);
-                  r = RED(pixel);
-                  g = GREEN(pixel);
-                  b = BLUE(pixel);
+                  pixel = *(in + (rows * myCols + (cols / 3)));
 
-                  *(slab+x+yprecal[y]) = r;
-                  *(slab+x+yprecal[y] + 1) = g;
-                  *(slab+x+yprecal[y] + 2) = b;
+                  r = *(pRawBytes+((rows * myCols * 3) + cols));
+                  g = *(pRawBytes+((rows * myCols * 3) + cols) + 1);
+                  b = *(pRawBytes+((rows * myCols * 3) + cols) + 2);
+
+                  rgba = RGB(r,g,b);
+
+                  *(out + (rows * myCols + (cols / 3))) = rgba;
 
                 }
             }
 
-            test = PyBytes_FromStringAndSize(slab, 3 * (geo->w * geo->h));
-            pMyTest   = PyBytes_AsString(test);
-
-            /* What we know
-               conBuffer has the right data, if we do:
-
-               *(out+x+yprecal[y]) = *(conBuffer+x+yprecal[y]);
-
-               it works. This already breaks everything:
-
-               test = PyBytes_FromStringAndSize((char*)conBuffer, geo->size);
-
-               likely due to the (char*) conversion.
-
-            */
-
-            // Store
-            for (x=(int)0;x<geo->w;x++) {
-                for (y=(int)0;y<geo->h;y++) {
-                  //*(out+x+yprecal[y]) = *(pMyTest+x+yprecal[y]);
-
-                  char r,g,b;
-                  int32_t rgba;
-
-                  //r = *(slab + (x * geo->w) + y);
-                  //g = *(slab + (x * geo->w) + y + 1);
-                  //b = *(slab + (x * geo->w) + y + 2);
-
-                  r = *(pRawBytes+x+yprecal[y]);
-                  g = *(pRawBytes+x+yprecal[y] + 1);
-                  b = *(pRawBytes+x+yprecal[y] + 2);
-
-                  rgba = RGBA(r,g,b, 0xFF);
-
-                  *(out+x+yprecal[y]) = rgba;
-
-
-                }
-            }
             Py_DECREF(pOutBytes);
             Py_DECREF(pValue);
 
         }
         else {
+
             PyErr_Print();
             fprintf(stderr,"Call failed\n");
+            // Drop the frame, write the frame normally.
+            for (x=(int)0;x<geo->w;x++) {
+                for (y=(int)0;y<geo->h;y++) {
+                    // Copy original color
+                    *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+                }
+            }
         }
-
 
     } else {
 
         for (x=(int)0;x<geo->w;x++) {
             for (y=(int)0;y<geo->h;y++) {
                 // Copy original color
-                //*(out+x+yprecal[y]) = *(in+x+yprecal[y]);
+                *(out+x+yprecal[y]) = *(in+x+yprecal[y]);
             }
         }
 
@@ -461,10 +328,7 @@ public:
 
 private:
   ScreenGeometry *geo;
-  /* buffer where to copy the screen
-     a pointer to it is being given back by process() */
-  int32_t *prePixBuffer;
-  int32_t *conBuffer;
+  char *frameBuffer;
   int *yprecal;
   bool pythonReady;
 
