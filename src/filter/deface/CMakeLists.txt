@@ -13,9 +13,23 @@ add_library (${TARGET}  MODULE ${SOURCES})
 set_target_properties (${TARGET} PROPERTIES PREFIX "")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
+# Install pyenv with:
+#
+# curl https://pyenv.run | bash
+#
+# Install python 3.6 dev with:
+#
+# PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 3.6-dev
+#
+# Then install deface with:
+#
+# python3 -m pip install 'git+https://github.com/ORB-HD/deface'
+
+
 # Now we initalised deface as a library, and we can link extra stuff after this point.
 
 if(LINUX)
+
     message(STATUS ">>> Building on Linux <<<")
 
     include_directories(/home/centos/.pyenv/versions/3.6-dev/include/python3.6m)
