@@ -19,6 +19,7 @@
  *
  */
 
+#include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -67,6 +68,12 @@ public:
   PyGILState_STATE gstate;
 
   Deface(unsigned int width, unsigned int height) {
+
+      // Thank you Stack Overflow stranger, may bards sing
+      // odes to you: https://stackoverflow.com/questions/49784583/numpy-import-fails-on-multiarray-extension-library-when-called-from-embedded-pyt
+#ifdef __linux__
+      dlopen("libpython3.6m.so.1.0", RTLD_LAZY | RTLD_GLOBAL);
+#endif
 
       global_counter++;
 
